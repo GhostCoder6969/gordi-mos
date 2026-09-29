@@ -184,6 +184,20 @@ else
   echo "── every changed path proven inert — npm lane skipped (CI verify applies the same polarity)"
 fi
 
+# A changed guard runs its own self-test here, as CI's guard-self-tests job would. The marker keeps
+# a self-test that drives this script from recursing.
+if [ -n "$base" ] && [ -z "${MOS_GUARD_SELFTESTS_RUNNING:-}" ]; then
+  guard_tests=()
+  while IFS= read -r _f; do
+    _t="scripts/$(basename "${_f%.test.sh}" .sh).test.sh"
+    [ -f "$_t" ] && [[ " ${guard_tests[*]-} " != *" $_t "* ]] && guard_tests+=("$_t")
+  done < <(git diff --name-only --diff-filter=d "$base"...HEAD -- 'scripts/*.sh')
+  for _t in ${guard_tests[@]+"${guard_tests[@]}"}; do
+    echo "── guard self-test: $_t"
+    MOS_GUARD_SELFTESTS_RUNNING=1 bash "$_t" >/dev/null 2>&1 || { echo "✗ $_t failed — run it for details" >&2; exit 1; }
+  done
+fi
+
 if [ "$(git rev-parse HEAD)" != "$head" ] || [ -n "$(git status --porcelain)" ]; then
   echo "✗ checkout changed during verification — rerun on the final clean commit" >&2
   exit 1

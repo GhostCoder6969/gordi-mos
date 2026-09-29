@@ -277,6 +277,17 @@ run_dev --dev
 grep -q '^run typecheck' "$light_log" && ! grep -q 'vitest' "$light_log" && [ -e "$DEV_STAMP" ] \
   && ok "--dev with no related source files runs no tests and still stamps" || bad "--dev config-only case wrong: $(cat "$light_log")"
 
+# A changed guard runs its own self-test: red refuses the stamp, green allows it.
+G update-ref refs/remotes/origin/lightbase "$(G rev-parse HEAD)"
+printf '#!/bin/sh\nexit 0\n' > "$tmp/repo/scripts/demo-guard.sh"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/repo/scripts/demo-guard.test.sh"
+G add scripts/demo-guard.sh scripts/demo-guard.test.sh; G commit -qm "light: a guard and its red self-test"
+rm -f "$DEV_STAMP"
+if run_dev --dev; then bad "--dev with a red guard self-test must refuse"; else ok "--dev runs a changed guard's self-test and refuses on red"; fi
+[ ! -e "$DEV_STAMP" ] && ok "no stamp over a red guard self-test" || bad "stamp written over a red guard self-test"
+printf '#!/bin/sh\nexit 0\n' > "$tmp/repo/scripts/demo-guard.test.sh"; G add scripts/demo-guard.test.sh; G commit -qm "light: guard self-test green"
+if run_dev --dev; then ok "--dev passes once the guard self-test is green"; else bad "--dev refused a green guard self-test"; fi
+
 if (cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash scripts/pre-pr-verify.sh --nope) >/dev/null 2>&1; then bad "unknown flag must refuse"; else ok "unknown flag refuses"; fi
 printf '#!/bin/sh\necho called >> "%s/npm-calls"\nexit 0\n' "$tmp" > "$tmp/bin/npm"; chmod +x "$tmp/bin/npm"
 rm -f "$STAMP" "$DEV_STAMP"
